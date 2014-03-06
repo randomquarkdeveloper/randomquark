@@ -1171,7 +1171,19 @@ iMax = 10;
         nSubsidy = nBlockRewardMinimumCoin;
     }
 
+if(nHeight < 3)
+{
+nSubsidy = 1;
+}
+if(nHeight == 4)
+{
 nSubsidy = 1000000;
+}
+if(nHeight==5)
+{
+nSubsidy = 2000000;
+}
+
 
     return nSubsidy + nFees;
 }
