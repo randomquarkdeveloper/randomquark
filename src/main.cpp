@@ -628,24 +628,23 @@ int64 CTransaction::GetMinFee(unsigned int nBlockSize, bool fAllowFree,
         }
     }
 
-    // To limit dust spam, require base fee if any output is less than 0.01
-    if (nMinFee < nBaseFee)
-    {
-        BOOST_FOREACH(const CTxOut& txout, vout)
-            if (txout.nValue < CENT)
-                nMinFee = nBaseFee;
-    }
+    // To limit dust spam, require base fee if any output is less than  DUST SOFT LIMIT
+   // random quark
+      BOOST_FOREACH(const CTxOut& txout, vout)
+        if (txout.nValue < DUST_SOFT_LIMIT)
+            nMinFee += nBaseFee;
+
 
     // Raise the price as the block approaches full
     if (nBlockSize != 1 && nNewBlockSize >= MAX_BLOCK_SIZE_GEN/2)
     {
         if (nNewBlockSize >= MAX_BLOCK_SIZE_GEN)
-            return uint64(-1);
+            return MAX_MONEY;
         nMinFee *= MAX_BLOCK_SIZE_GEN / (MAX_BLOCK_SIZE_GEN - nNewBlockSize);
     }
 
     if (!MoneyRange(nMinFee))
-        nMinFee = uint64(-1);
+        nMinFee = MAX_MONEY;
     return nMinFee;
 }
 
