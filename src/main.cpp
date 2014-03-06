@@ -1093,7 +1093,7 @@ static const int64 nGenesisBlockRewardCoin = 1 * COIN;
 static const int64 nBlockRewardStartCoin = 2048 * COIN;
 static const int64 nBlockRewardMinimumCoin = 1 * COIN;
 
-static const int64 nTargetTimespan = 60 * 60; // 60 minutes
+static const int64 nTargetTimespan = 4* 60 * 60; // 60 minutes
 static const int64 nTargetSpacing = 60; // 60 seconds
 static const int64 nInterval = nTargetTimespan / nTargetSpacing; // 20 blocks
 
@@ -1104,7 +1104,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
     std::string cseed_str = prevHash.ToString().substr(7,7);
     const char* cseed = cseed_str.c_str();
     long seed = hex2long(cseed);
-    int rand = generateMTRandom(seed, 999999);
+    int rand = generateMTRandom(seed, 99999);
     int rand1 = 0;
     int rand2 = 0;
     int rand3 = 0;
@@ -1120,7 +1120,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         cseed_str = prevHash.ToString().substr(7,7);
         cseed = cseed_str.c_str();
         seed = hex2long(cseed);
-        rand1 = generateMTRandom(seed, 499999);
+        rand1 = generateMTRandom(seed, 49999);
         nSubsidy = (1 + rand1) * COIN;
     }
     else if(nHeight < 300000)
@@ -1128,7 +1128,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         cseed_str = prevHash.ToString().substr(6,7);
         cseed = cseed_str.c_str();
         seed = hex2long(cseed);
-        rand2 = generateMTRandom(seed, 249999);
+        rand2 = generateMTRandom(seed, 24999);
         nSubsidy = (1 + rand2) * COIN;
     }
     else if(nHeight < 400000)
@@ -1136,7 +1136,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         cseed_str = prevHash.ToString().substr(7,7);
         cseed = cseed_str.c_str();
         seed = hex2long(cseed);
-        rand3 = generateMTRandom(seed, 124999);
+        rand3 = generateMTRandom(seed, 12499);
         nSubsidy = (1 + rand3) * COIN;
     }
     else if(nHeight < 500000)
@@ -1144,7 +1144,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         cseed_str = prevHash.ToString().substr(7,7);
         cseed = cseed_str.c_str();
         seed = hex2long(cseed);
-        rand4 = generateMTRandom(seed, 62499);
+        rand4 = generateMTRandom(seed, 6249);
         nSubsidy = (1 + rand4) * COIN;
     }
     else if(nHeight < 600000)
@@ -1152,7 +1152,7 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         cseed_str = prevHash.ToString().substr(6,7);
         cseed = cseed_str.c_str();
         seed = hex2long(cseed);
-        rand5 = generateMTRandom(seed, 31249);
+        rand5 = generateMTRandom(seed, 3124);
         nSubsidy = (1 + rand5) * COIN;
     }
 
@@ -1175,9 +1175,9 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     while (nTime > 0 && bnResult < bnProofOfWorkLimit)
     {
         // Maximum 200% adjustment...
-        bnResult *= 2;
+        bnResult *= 4;
         // ... per timespan
-        nTime -= nTargetTimespan;
+        nTime -= nTargetTimespan * 4;
     }
     if (bnResult > bnProofOfWorkLimit)
         bnResult = bnProofOfWorkLimit;
@@ -1215,6 +1215,12 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
         return pindexLast->nBits;
     }
 
+/*
+ int blockstogoback = nInterval-1;
+    if ((pindexLast->nHeight+1) != nInterval)
+        blockstogoback = nInterval;
+*/
+
     // Go back by what we want to be nInterval blocks 
     const CBlockIndex* pindexFirst = pindexLast;
     for (int i = 0; pindexFirst && i < nInterval-1; i++)
@@ -1224,12 +1230,40 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
     printf("  nActualTimespan = %"PRI64d"  before bounds\n", nActualTimespan);
-    int64 LimUp = nTargetTimespan * 100 / 110; // 110% up
+/*  
+  int64 LimUp = nTargetTimespan * 100 / 110; // 110% up
     int64 LimDown = nTargetTimespan * 2; // 200% down
     if (nActualTimespan < LimUp)
         nActualTimespan = LimUp;
     if (nActualTimespan > LimDown)
         nActualTimespan = LimDown;
+
+*/
+
+
+if(pindexLast->nHeight+1 > 10000)
+    {
+        if (nActualTimespan < nTargetTimespan/4)
+            nActualTimespan = nTargetTimespan/4;
+        if (nActualTimespan > nTargetTimespan*4)
+            nActualTimespan = nTargetTimespan*4;
+    }
+    else if(pindexLast->nHeight+1 > 5000)
+    {
+        if (nActualTimespan < nTargetTimespan/8)
+            nActualTimespan = nTargetTimespan/8;
+        if (nActualTimespan > nTargetTimespan*4)
+            nActualTimespan = nTargetTimespan*4;
+    }
+    else
+    {
+        if (nActualTimespan < nTargetTimespan/16)
+            nActualTimespan = nTargetTimespan/16;
+        if (nActualTimespan > nTargetTimespan*4)
+            nActualTimespan = nTargetTimespan*4;
+    }
+
+
 
     // Retarget
     CBigNum bnNew;
@@ -1283,7 +1317,7 @@ bool IsInitialBlockDownload()
         nLastUpdate = GetTime();
     }
     return (GetTime() - nLastUpdate < 10 &&
-            pindexBest->GetBlockTime() < GetTime() - 96 * 60 * 60);
+            pindexBest->GetBlockTime() < GetTime() - 24 * 60 * 60);
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
