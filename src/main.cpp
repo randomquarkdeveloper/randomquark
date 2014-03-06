@@ -288,15 +288,11 @@ CBlockTreeDB *pblocktree = NULL;
 // mapOrphanTransactions
 //
 
-bool AddOrphanTx(const CDataStream& vMsg)
+bool AddOrphanTx(const CTransaction& tx)
 {
-    CTransaction tx;
-    CDataStream(vMsg) >> tx;
     uint256 hash = tx.GetHash();
     if (mapOrphanTransactions.count(hash))
         return false;
-
-    CDataStream* pvMsg = new CDataStream(vMsg);
 
     // Ignore big transactions, to avoid a
     // send-big-orphans memory exhaustion attack. If a peer has a legitimate
@@ -305,21 +301,36 @@ bool AddOrphanTx(const CDataStream& vMsg)
     // have been mined or received.
     // 10,000 orphans, each of which is at most 5,000 bytes big is
     // at most 500 megabytes of orphans:
-    if (pvMsg->size() > 5000)
+    unsigned int sz = tx.GetSerializeSize(SER_NETWORK, CTransaction::CURRENT_VERSION);
+    if (sz > 5000)
     {
-        printf("ignoring large orphan tx (size: %"PRIszu", hash: %s)\n", pvMsg->size(), hash.ToString().c_str());
-        delete pvMsg;
+        printf("ignoring large orphan tx (size: %u, hash: %s)\n", sz, hash.ToString().c_str());
         return false;
     }
 
-    mapOrphanTransactions[hash] = pvMsg;
+    mapOrphanTransactions[hash] = tx;
     BOOST_FOREACH(const CTxIn& txin, tx.vin)
-        mapOrphanTransactionsByPrev[txin.prevout.hash].insert(make_pair(hash, pvMsg));
+        mapOrphanTransactionsByPrev[txin.prevout.hash].insert(hash);
 
     printf("stored orphan tx %s (mapsz %"PRIszu")\n", hash.ToString().c_str(),
         mapOrphanTransactions.size());
     return true;
 }
+
+void static EraseOrphanTx(uint256 hash)
+{
+    if (!mapOrphanTransactions.count(hash))
+        return;
+    const CTransaction& tx = mapOrphanTransactions[hash];
+    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+    {
+        mapOrphanTransactionsByPrev[txin.prevout.hash].erase(hash);
+        if (mapOrphanTransactionsByPrev[txin.prevout.hash].empty())
+            mapOrphanTransactionsByPrev.erase(txin.prevout.hash);
+    }
+    mapOrphanTransactions.erase(hash);
+}
+/*
 
 void static EraseOrphanTx(uint256 hash)
 {
@@ -337,6 +348,9 @@ void static EraseOrphanTx(uint256 hash)
     delete pvMsg;
     mapOrphanTransactions.erase(hash);
 }
+
+
+*/
 
 unsigned int LimitOrphanTxSize(unsigned int nMaxOrphans)
 {
@@ -375,22 +389,21 @@ bool CTxOut::IsDust() const
     // need a CTxIn of at least 148 bytes to spend,
     // so dust is a txout less than 54 uBTC
     // (5430 satoshis) with default nMinRelayTxFee
-    return ((nValue*1000)/(3*((int)GetSerializeSize(SER_DISK,0)+148)) < CTransaction::nMinRelayTxFee);
+    //return ((nValue*1000)/(3*((int)GetSerializeSize(SER_DISK,0)+148)) < CTransaction::nMinRelayTxFee);
+return false;
 }
 
-bool CTransaction::IsStandard() const
+bool CTransaction::IsStandard(string& strReason) const
 {
-    if (nVersion > CTransaction::TXCOMMENT_VERSION)
+    if (nVersion > CTransaction::TXCOMMENT_VERSION){
+strReason = "version";   
+     return false;
+}
+    if (!IsFinal()){
+   strReason = "not-final";
         return false;
-
-    if (!IsFinal())
-        return false;
-
-	// Disallow large transaction comments
-	if (strTxComment.length() > MAX_TX_COMMENT_LEN)
-		return false;
-        
-    // Extremely large transactions with lots of inputs can cost the network
+}
+	// Disallow large transaction comment extremely large transactions with lots of inputs can cost the network
     // almost as much to process as they cost the sender in fees, because
     // computing signature hashes is O(ninputs*txsize). Limiting transactions
     // to MAX_STANDARD_TX_SIZE mitigates CPU exhaustion attacks.
@@ -404,16 +417,29 @@ bool CTransaction::IsStandard() const
         // pay-to-script-hash, which is 3 ~80-byte signatures, 3
         // ~65-byte public keys, plus a few script ops.
         if (txin.scriptSig.size() > 500)
+ {
+            strReason = "scriptsig-size";
             return false;
+}
         if (!txin.scriptSig.IsPushOnly())
+{
+            strReason = "scriptsig-not-pushonly";
             return false;
+}
     }
     BOOST_FOREACH(const CTxOut& txout, vout) {
         if (!::IsStandard(txout.scriptPubKey))
+{
+            strReason = "scriptpubkey";
             return false;
-        if (txout.IsDust())
+} 
+       if (txout.IsDust())
+{
+            strReason = "dust";
+
             return false;
-    }
+} 
+   }
     return true;
 }
 
