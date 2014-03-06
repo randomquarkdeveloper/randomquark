@@ -18,8 +18,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/random/mersenne_twister.hpp>
-#include <boost/random/uniform_int.hpp>
 
 using namespace std;
 using namespace boost;
@@ -37,15 +35,14 @@ CTxMemPool mempool;
 unsigned int nTransactionsUpdated = 0;
 
 map<uint256, CBlockIndex*> mapBlockIndex;
-uint256 hashGenesisBlock("0x00000c530304f698825ccf8dd524968f73ca045fd749f181d925a70b678644bf");
-static const unsigned int timeGenesisBlock = 1394010438;
+uint256 hashGenesisBlock("0x0000072f0936c84bf7eabffbda0dc6771255ebb71a30759f12ba9b1adafaee15");
+static const unsigned int timeGenesisBlock = 1393869930;
 static CBigNum bnProofOfWorkLimit(~uint256(0) >> 20);
 CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
 uint256 nBestChainWork = 0;
 uint256 nBestInvalidWork = 0;
 uint256 hashBestChain = 0;
-//uint256 prevHash = 0;
 CBlockIndex* pindexBest = NULL;
 set<CBlockIndex*, CBlockIndexWorkComparator> setBlockIndexValid; // may contain all CBlockIndex*'s that have validness >=BLOCK_VALID_TRANSACTIONS, and must contain those who aren't failed
 int64 nTimeBestReceived = 0;
@@ -57,9 +54,9 @@ bool fTxIndex = false;
 unsigned int nCoinCacheSize = 5000;
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for transaction creation) */
-int64 CTransaction::nMinTxFee = 100000000;  // Override with -mintxfee
+int64 CTransaction::nMinTxFee = 10;  // Override with -mintxfee
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying) */
-int64 CTransaction::nMinRelayTxFee = 100000000;
+int64 CTransaction::nMinRelayTxFee = 100;
 
 CMedianFilter<int> cPeerBlockCounts(8, 0); // Amount of blocks that other nodes claim to have
 
@@ -72,14 +69,13 @@ map<uint256, map<uint256, CDataStream*> > mapOrphanTransactionsByPrev;
 // Constant stuff for coinbase transactions we create:
 CScript COINBASE_FLAGS;
 
-const string strMessageMagic = "RandomQuark Signed Message:\n";
+const string strMessageMagic = "FairQuark Signed Message:\n";
 
 double dHashesPerSec = 0.0;
 int64 nHPSTimerStart = 0;
 
 // Settings
 int64 nTransactionFee = 0;
-int64 nMinimumInputValue = DUST_HARD_LIMIT;
 
 
 
@@ -629,23 +625,24 @@ int64 CTransaction::GetMinFee(unsigned int nBlockSize, bool fAllowFree,
         }
     }
 
-    // To limit dust spam, require base fee if any output is less than  DUST SOFT LIMIT
-   // random quark
-      BOOST_FOREACH(const CTxOut& txout, vout)
-        if (txout.nValue < DUST_SOFT_LIMIT)
-            nMinFee += nBaseFee;
-
+    // To limit dust spam, require base fee if any output is less than 0.01
+    if (nMinFee < nBaseFee)
+    {
+        BOOST_FOREACH(const CTxOut& txout, vout)
+            if (txout.nValue < CENT)
+                nMinFee = nBaseFee;
+    }
 
     // Raise the price as the block approaches full
     if (nBlockSize != 1 && nNewBlockSize >= MAX_BLOCK_SIZE_GEN/2)
     {
         if (nNewBlockSize >= MAX_BLOCK_SIZE_GEN)
-            return MAX_MONEY;
+            return uint64(-1);
         nMinFee *= MAX_BLOCK_SIZE_GEN / (MAX_BLOCK_SIZE_GEN - nNewBlockSize);
     }
 
     if (!MoneyRange(nMinFee))
-        nMinFee = MAX_MONEY;
+        nMinFee = uint64(-1);
     return nMinFee;
 }
 
@@ -1072,6 +1069,13 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex)
     return true;
 }
 
+int getrandint(int min, int max)   
+{   
+    int num;   
+    num=rand();   
+    num=num%(max-min+1)+min;   
+    return num;   
+} 
 
 uint256 static GetOrphanRoot(const CBlockHeader* pblock)
 {
@@ -1081,79 +1085,62 @@ uint256 static GetOrphanRoot(const CBlockHeader* pblock)
     return pblock->GetHash();
 }
 
-
-int static generateMTRandom(unsigned int s, int range)
-{
-    boost::mt19937 gen(s);
-    boost::uniform_int<> dist(1, range);
-    return dist(gen);
-}
-
 static const int64 nGenesisBlockRewardCoin = 1 * COIN;
-static const int64 nBlockRewardStartCoin = 2048 * COIN;
+static const int64 nBlockRewardStartCoin = 100 * COIN;
 static const int64 nBlockRewardMinimumCoin = 1 * COIN;
 
-static const int64 nTargetTimespan = 4* 60 * 60; // 60 minutes
+static const int64 nTargetTimespan = 60 * 60 * 4; // 4 Hrs
 static const int64 nTargetSpacing = 60; // 60 seconds
 static const int64 nInterval = nTargetTimespan / nTargetSpacing; // 20 blocks
 
-int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
+static const unsigned int nMaxCoinInt = 5000;
+int64 nMaxCoinPerBlock = nMaxCoinInt * COIN;
+
+
+
+int64 static GetBlockValue(int nHeight, int64 nFees, unsigned int nBits)
 {
-    int64 nSubsidy = 10000 * COIN;
+    if (nHeight == 0)
+    {
+        return nGenesisBlockRewardCoin;
+    }
 
-    std::string cseed_str = prevHash.ToString().substr(7,7);
-    const char* cseed = cseed_str.c_str();
-    long seed = hex2long(cseed);
-    int rand = generateMTRandom(seed, 99999);
-    int rand1 = 0;
-    int rand2 = 0;
-    int rand3 = 0;
-    int rand4 = 0;
-    int rand5 = 0;
+   unsigned int i, iMax, iMin;
+   
+    
+   iMin = 1;
+   iMax = 50;
 
-    if(nHeight < 100000)
+if(nHeight<500)
+{
+iMax = 3;
+}
+if(nHeight > 8000)
+{
+iMax = 30;
+}
+if(nHeight > 20000)
+{
+iMax = 20;
+}
+if(nHeight > 100000)
+{
+iMax = 10;
+}
+
+   
+    i = getrandint(iMin, iMax);
+    int64 nSubsidy = nBlockRewardStartCoin * i ;
+
+
+
+    // Subsidy is cut in half every 60480 blocks (21 days)
+    //nSubsidy >>= (nHeight / 60480);
+    
+    // Minimum subsidy
+    if (nSubsidy < nBlockRewardMinimumCoin)
     {
-        nSubsidy = (1 + rand) * COIN;
-    }
-    else if(nHeight < 200000)
-    {
-        cseed_str = prevHash.ToString().substr(7,7);
-        cseed = cseed_str.c_str();
-        seed = hex2long(cseed);
-        rand1 = generateMTRandom(seed, 49999);
-        nSubsidy = (1 + rand1) * COIN;
-    }
-    else if(nHeight < 300000)
-    {
-        cseed_str = prevHash.ToString().substr(6,7);
-        cseed = cseed_str.c_str();
-        seed = hex2long(cseed);
-        rand2 = generateMTRandom(seed, 24999);
-        nSubsidy = (1 + rand2) * COIN;
-    }
-    else if(nHeight < 400000)
-    {
-        cseed_str = prevHash.ToString().substr(7,7);
-        cseed = cseed_str.c_str();
-        seed = hex2long(cseed);
-        rand3 = generateMTRandom(seed, 12499);
-        nSubsidy = (1 + rand3) * COIN;
-    }
-    else if(nHeight < 500000)
-    {
-        cseed_str = prevHash.ToString().substr(7,7);
-        cseed = cseed_str.c_str();
-        seed = hex2long(cseed);
-        rand4 = generateMTRandom(seed, 6249);
-        nSubsidy = (1 + rand4) * COIN;
-    }
-    else if(nHeight < 600000)
-    {
-        cseed_str = prevHash.ToString().substr(6,7);
-        cseed = cseed_str.c_str();
-        seed = hex2long(cseed);
-        rand5 = generateMTRandom(seed, 3124);
-        nSubsidy = (1 + rand5) * COIN;
+        nSubsidy = nBlockRewardMinimumCoin;
     }
 
     return nSubsidy + nFees;
@@ -1175,9 +1162,9 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     while (nTime > 0 && bnResult < bnProofOfWorkLimit)
     {
         // Maximum 200% adjustment...
-        bnResult *= 4;
+        bnResult *= 2;
         // ... per timespan
-        nTime -= nTargetTimespan * 4;
+        nTime -= nTargetTimespan;
     }
     if (bnResult > bnProofOfWorkLimit)
         bnResult = bnProofOfWorkLimit;
@@ -1215,12 +1202,6 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
         return pindexLast->nBits;
     }
 
-/*
- int blockstogoback = nInterval-1;
-    if ((pindexLast->nHeight+1) != nInterval)
-        blockstogoback = nInterval;
-*/
-
     // Go back by what we want to be nInterval blocks 
     const CBlockIndex* pindexFirst = pindexLast;
     for (int i = 0; pindexFirst && i < nInterval-1; i++)
@@ -1230,40 +1211,12 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
     printf("  nActualTimespan = %"PRI64d"  before bounds\n", nActualTimespan);
-/*  
-  int64 LimUp = nTargetTimespan * 100 / 110; // 110% up
+    int64 LimUp = nTargetTimespan * 100 / 110; // 110% up
     int64 LimDown = nTargetTimespan * 2; // 200% down
     if (nActualTimespan < LimUp)
         nActualTimespan = LimUp;
     if (nActualTimespan > LimDown)
         nActualTimespan = LimDown;
-
-*/
-
-
-if(pindexLast->nHeight+1 > 10000)
-    {
-        if (nActualTimespan < nTargetTimespan/4)
-            nActualTimespan = nTargetTimespan/4;
-        if (nActualTimespan > nTargetTimespan*4)
-            nActualTimespan = nTargetTimespan*4;
-    }
-    else if(pindexLast->nHeight+1 > 5000)
-    {
-        if (nActualTimespan < nTargetTimespan/8)
-            nActualTimespan = nTargetTimespan/8;
-        if (nActualTimespan > nTargetTimespan*4)
-            nActualTimespan = nTargetTimespan*4;
-    }
-    else
-    {
-        if (nActualTimespan < nTargetTimespan/16)
-            nActualTimespan = nTargetTimespan/16;
-        if (nActualTimespan > nTargetTimespan*4)
-            nActualTimespan = nTargetTimespan*4;
-    }
-
-
 
     // Retarget
     CBigNum bnNew;
@@ -1317,7 +1270,7 @@ bool IsInitialBlockDownload()
         nLastUpdate = GetTime();
     }
     return (GetTime() - nLastUpdate < 10 &&
-            pindexBest->GetBlockTime() < GetTime() - 24 * 60 * 60);
+            pindexBest->GetBlockTime() < GetTime() - 96 * 60 * 60);
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
@@ -1806,15 +1759,8 @@ bool CBlock::ConnectBlock(CValidationState &state, CBlockIndex* pindex, CCoinsVi
     if (fBenchmark)
         printf("- Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin)\n", (unsigned)vtx.size(), 0.001 * nTime, 0.001 * nTime / vtx.size(), nInputs <= 1 ? 0 : 0.001 * nTime / (nInputs-1));
 
-   uint256 prevHash = 0;
-   if(pindex->pprev)
-    {
-        prevHash = pindex->pprev->GetBlockHash();
-    }
-
-
-    if (vtx[0].GetValueOut() > GetBlockValue(pindex->nHeight, nFees, prevHash))
-        return state.DoS(100, error("ConnectBlock() : coinbase pays too much (actual=%"PRI64d" vs limit=%"PRI64d")", vtx[0].GetValueOut(), GetBlockValue(pindex->nHeight, nFees, prevHash)));
+    	if (vtx[0].GetValueOut() > nMaxCoinPerBlock)
+        return state.DoS(100, error("ConnectBlock() : coinbase pays too much (actual=%"PRI64d" vs limit=%"PRI64d")", vtx[0].GetValueOut(), nMaxCoinPerBlock));
 
     if (!control.Wait())
         return state.DoS(100, false);
@@ -2883,7 +2829,7 @@ CBlock(hash=00000e5e37c42d6b67d0934399adfb0fa48b59138abb1a8842c88f4ca3d4ec96, ve
 */
 
         // Genesis block
-        const char* pszTimestamp = "ECB May Repeat Japan Deflation Mistake That Triggered Lost Decade";
+        const char* pszTimestamp = "US Stocks Fall Amid Global Equities Selloff on Ukraine Mar 4 2014";
         CTransaction txNew;
         txNew.vin.resize(1);
         txNew.vout.resize(1);
@@ -2897,12 +2843,12 @@ CBlock(hash=00000e5e37c42d6b67d0934399adfb0fa48b59138abb1a8842c88f4ca3d4ec96, ve
         block.nVersion = 112;
         block.nTime    = timeGenesisBlock;
         block.nBits    = bnProofOfWorkLimit.GetCompact();
-        block.nNonce   = 922553;
+        block.nNonce   = 0;
 
         if (fTestNet)
         {
             block.nTime    = 1386926966;
-            block.nNonce   = 13080176;
+            block.nNonce   = 0;
         }
 
         //// debug print
@@ -2916,7 +2862,7 @@ CBlock(hash=00000e5e37c42d6b67d0934399adfb0fa48b59138abb1a8842c88f4ca3d4ec96, ve
         printf("%s\n", hashGenesisBlock.ToString().c_str());
         printf("%s\n", block.hashMerkleRoot.ToString().c_str());
         block.print();
-        assert(block.hashMerkleRoot == uint256("0x948a749fd16fff69ccbcc13af322dac716b6235fd603b4942ee7d6b605651d7f"));
+        assert(block.hashMerkleRoot == uint256("0x81f183c45f459a4a10ac59e3525ffda68f209f708eeb6b8fe5342033cf385f44"));
         assert(hash == hashGenesisBlock);
 
         // Start new block file
@@ -4544,7 +4490,7 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
         pblock->nNonce         = 0;
 
         // Calculate nVvalue dependet nBits
-        GetBlockValue(pindexPrev->nHeight+1, nFees, pindexPrev->GetBlockHash());;
+        pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees, pblock->nBits);
         pblocktemplate->vTxFees[0] = -nFees;
 
         pblock->vtx[0].vin[0].scriptSig = CScript() << OP_0 << OP_0;
@@ -4636,7 +4582,7 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
         return false;
 
     //// debug print
-    printf("RandomQuarkMiner:\n");
+    printf("FairQuarkMiner:\n");
     printf("proof-of-work found  \n  hash: %s  \ntarget: %s\n", hash.GetHex().c_str(), hashTarget.GetHex().c_str());
     pblock->print();
     printf("generated %s\n", FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
@@ -4645,7 +4591,7 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     {
         LOCK(cs_main);
         if (pblock->hashPrevBlock != hashBestChain)
-            return error("RandomQuarkMiner : generated block is stale");
+            return error("FairQuarkMiner : generated block is stale");
 
         // Remove key from key pool
         reservekey.KeepKey();
@@ -4659,7 +4605,7 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
         // Process this block the same as if we had received it from another node
         CValidationState state;
         if (!ProcessBlock(state, NULL, pblock))
-            return error("RandomQuarkMiner : ProcessBlock, block not accepted");
+            return error("FairQuarkMiner : ProcessBlock, block not accepted");
     }
 
     return true;
@@ -4667,9 +4613,9 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
 
 void static BitcoinMiner(CWallet *pwallet)
 {
-    printf("RandomQuarkMiner started\n");
+    printf("FairQuarkMiner started\n");
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
-    RenameThread("randomquark-miner");
+    RenameThread("fairquark-miner");
 
     // Each thread has its own key and counter
     CReserveKey reservekey(pwallet);
@@ -4693,7 +4639,7 @@ void static BitcoinMiner(CWallet *pwallet)
         CBlock *pblock = &pblocktemplate->block;
         IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
-        printf("Running RandomQuarkMiner with %"PRIszu" transactions in block (%u bytes)\n", pblock->vtx.size(),
+        printf("Running FairQuarkMiner with %"PRIszu" transactions in block (%u bytes)\n", pblock->vtx.size(),
                ::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION));
 
         //
@@ -4797,7 +4743,7 @@ void static BitcoinMiner(CWallet *pwallet)
     } }
     catch (boost::thread_interrupted)
     {
-        printf("RandomQuarkMiner terminated\n");
+        printf("FairQuarkMiner terminated\n");
         throw;
     }
 }
