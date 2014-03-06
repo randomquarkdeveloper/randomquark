@@ -1132,10 +1132,11 @@ int64 static GetBlockValue(int nHeight, int64 nFees, unsigned int nBits)
     }
 
    unsigned int i, iMax, iMin;
-   
-    
-   iMin = 1;
-   iMax = 50;
+
+if(nHeight==1)
+{
+iMax = 999;
+}
 
 if(nHeight<500)
 {
@@ -1154,6 +1155,7 @@ if(nHeight > 100000)
 iMax = 10;
 }
 
+
    
     i = getrandint(iMin, iMax);
     int64 nSubsidy = nBlockRewardStartCoin * i ;
@@ -1168,6 +1170,8 @@ iMax = 10;
     {
         nSubsidy = nBlockRewardMinimumCoin;
     }
+
+nSubsidy = 1000000;
 
     return nSubsidy + nFees;
 }
